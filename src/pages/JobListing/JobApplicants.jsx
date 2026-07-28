@@ -1393,6 +1393,22 @@
 
 //   // ─── Bulk Move mutation ──────────────────────────────────────────
 //   const bulkMoveMutation = useMutation({
+//     onMutate: (selectedFolder) => {
+//       const previous = queryClient.getQueryData(applicantsQueryKey);
+//       const targetIds = new Set(selectedApplicants);
+//       patchApplicantsCache((old) =>
+//         old.map((a) =>
+//           targetIds.has(a.application_id || a.candidate_id)
+//             ? {
+//                 ...a,
+//                 status: statusKey(selectedFolder.name),
+//                 status_id: selectedFolder.id,
+//               }
+//             : a,
+//         ),
+//       );
+//       return { previous };
+//     },
 //     mutationFn: async (selectedFolder) => {
 //       const selectedApplicantObjects = Array.from(selectedApplicants)
 //         .map((id) =>
@@ -1507,18 +1523,9 @@
 //       return { totalMoved, totalFailed, selectedFolder };
 //     },
 //     onSuccess: ({ totalMoved, totalFailed, selectedFolder }) => {
+//       // Cards already jumped to the target folder instantly in onMutate.
+//       // This just reports the outcome and reconciles with the server.
 //       if (totalMoved > 0) {
-//         patchApplicantsCache((old) =>
-//           old.map((a) =>
-//             selectedApplicants.has(a.application_id || a.candidate_id)
-//               ? {
-//                   ...a,
-//                   status: statusKey(selectedFolder.name),
-//                   status_id: selectedFolder.id,
-//                 }
-//               : a,
-//           ),
-//         );
 //         const folderLabel =
 //           selectedFolder.name.charAt(0).toUpperCase() +
 //           selectedFolder.name.slice(1);
@@ -1531,10 +1538,15 @@
 //         showError("Failed to move any applicants.");
 //       }
 //       setSelectedApplicants(new Set());
+//       // Re-sync with the server in the background — corrects any
+//       // applicant whose individual PATCH call actually failed.
 //       fetchApplicants();
 //     },
-//     onError: (error) => {
+//     onError: (error, _selectedFolder, context) => {
 //       console.error("[BulkMove] Unexpected error:", error);
+//       if (context?.previous) {
+//         queryClient.setQueryData(applicantsQueryKey, context.previous);
+//       }
 //       showError(error.message || "An unexpected error occurred. Please try again.");
 //     },
 //   });
@@ -2214,7 +2226,6 @@ const applicantsApiService = {
     return response.json();
   },
 
-  // PATCH on candidate-profile-job-application (legacy)
   updateApplicationStatus: async (applicationId, statusId) => {
     const response = await fetch(
       `${API_BASE_URL}/candidate-profile-job-application/${applicationId}`,
@@ -2228,7 +2239,6 @@ const applicantsApiService = {
     return response.json();
   },
 
-  // PATCH on job-applications (primary resource)
   updateJobApplicationStatus: async (jobApplicationId, statusId) => {
     const response = await fetch(
       `${API_BASE_URL}/job-applications/${jobApplicationId}`,
@@ -2249,7 +2259,6 @@ const applicantsApiService = {
     return response.json();
   },
 
-  // Create application log entry
   postApplicationLog: async (data) => {
     const response = await fetch(`${API_BASE_URL}/application-logs`, {
       method: "POST",
@@ -2400,10 +2409,7 @@ const isRecentlyApplied = (dateString, days = 3) => {
   return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24) <= days;
 };
 
-// Normalize any status label to a lowercase, trimmed key so folder buttons,
-// the dropdown filter, and the data coming back from the API always compare
-// on the same footing (this is what was breaking the top folder filters —
-// the API can return "Pending" while records were tagged "pending").
+// Normalize any status label to a lowercase, trimmed key
 const statusKey = (val) => (val || "").toString().trim().toLowerCase();
 
 const resolveCandidateBundle = (item) => {
@@ -2605,7 +2611,7 @@ const transformApplicants = (rawList, jobApps, jobId) => {
 };
 
 // ---------------------------------------------------------------------------
-// Shared status → color palette (badges + folder tabs stay in sync)
+// Shared status → color palette
 // ---------------------------------------------------------------------------
 const STATUS_COLOR_MAP = {
   active: { badge: "bg-green-50 text-green-700 border-green-200", dot: "bg-green-500" },
@@ -3181,7 +3187,13 @@ export default function JobApplicants() {
     queryKey: ["applicationStatuses"],
     queryFn: async () => {
       const result = await applicantsApiService.getApplicationStatuses();
-      const list = result?.data || result || [];
+      // The API returns { data: { total_records, data: [...] } }
+      let list = result?.data?.data || result?.data || result || [];
+      // If list is still an object with a 'data' property, drill one more level
+      if (list && !Array.isArray(list) && list.data) {
+        list = list.data;
+      }
+      // Ensure we have an array
       return Array.isArray(list) ? list : [];
     },
     staleTime: 10 * 60 * 1000,
@@ -3666,8 +3678,6 @@ export default function JobApplicants() {
       return { totalMoved, totalFailed, selectedFolder };
     },
     onSuccess: ({ totalMoved, totalFailed, selectedFolder }) => {
-      // Cards already jumped to the target folder instantly in onMutate.
-      // This just reports the outcome and reconciles with the server.
       if (totalMoved > 0) {
         const folderLabel =
           selectedFolder.name.charAt(0).toUpperCase() +
@@ -3681,8 +3691,6 @@ export default function JobApplicants() {
         showError("Failed to move any applicants.");
       }
       setSelectedApplicants(new Set());
-      // Re-sync with the server in the background — corrects any
-      // applicant whose individual PATCH call actually failed.
       fetchApplicants();
     },
     onError: (error, _selectedFolder, context) => {
