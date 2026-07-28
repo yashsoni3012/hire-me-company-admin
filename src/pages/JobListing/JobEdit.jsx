@@ -39,7 +39,7 @@ import {
   didLookupFallback,
   didLookupFail,
   clearLookupCache,
-} from "../../services/jobEditService";
+} from "../../services/JobEditService";
 
 /* ---------------------------------------------------------- */
 /* UI Components                                                */
