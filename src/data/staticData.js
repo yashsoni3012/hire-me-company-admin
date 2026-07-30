@@ -1,14 +1,24 @@
 import {
-  TbLayoutDashboard, TbBriefcase, TbUsers, TbBuilding,
-  TbFileText, TbCalendarEvent, TbMessageCircle, TbSettings, TbChartBar,
-  TbChartLine, TbUserCheck, TbDeviceLaptop, TbCurrencyRupee, TbUser,
+   TbLayoutDashboard,
+  TbBriefcase,
+  TbPlus,
+  TbPackage,
+  TbHistory,
+  TbUser,
+   TbChartLine,
+   TbUserCheck,
+   TbDeviceLaptop,
+   TbCurrencyRupee,
 } from 'react-icons/tb'
 
 export const NAV_ITEMS = [
   // { section: 'Main' },
   { id: 'dashboard', label: 'Dashboard', icon: TbLayoutDashboard, path: '/' },
   { id: 'jobs', label: 'Job Listings', icon: TbBriefcase, path: '/jobs' },
-  { id: 'job-post', label: 'Post Job', icon: TbBriefcase, path: '/job-post' },
+  { id: 'job-post', label: 'Post Job', icon: TbPlus, path: '/job-post' },
+  { id: 'subscription-package', label: 'Subscription Packages', icon: TbPackage, path: '/subscription-package' },
+  { id: 'subscription-history', label: 'Subscription History', icon: TbHistory, path: '/subscription-history' },
+
   // { id: 'jobs', label: 'Job Listings', icon: TbBriefcase, path: '/jobs', badge: '12' },
 
   // { id: 'candidates', label: 'Candidates', icon: TbUsers, path: '/candidates' },

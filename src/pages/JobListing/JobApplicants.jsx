@@ -71,7 +71,6 @@
 //     return response.json();
 //   },
 
-//   // PATCH on candidate-profile-job-application (legacy)
 //   updateApplicationStatus: async (applicationId, statusId) => {
 //     const response = await fetch(
 //       `${API_BASE_URL}/candidate-profile-job-application/${applicationId}`,
@@ -85,7 +84,6 @@
 //     return response.json();
 //   },
 
-//   // PATCH on job-applications (primary resource)
 //   updateJobApplicationStatus: async (jobApplicationId, statusId) => {
 //     const response = await fetch(
 //       `${API_BASE_URL}/job-applications/${jobApplicationId}`,
@@ -106,7 +104,6 @@
 //     return response.json();
 //   },
 
-//   // Create application log entry
 //   postApplicationLog: async (data) => {
 //     const response = await fetch(`${API_BASE_URL}/application-logs`, {
 //       method: "POST",
@@ -257,10 +254,7 @@
 //   return (Date.now() - date.getTime()) / (1000 * 60 * 60 * 24) <= days;
 // };
 
-// // Normalize any status label to a lowercase, trimmed key so folder buttons,
-// // the dropdown filter, and the data coming back from the API always compare
-// // on the same footing (this is what was breaking the top folder filters —
-// // the API can return "Pending" while records were tagged "pending").
+// // Normalize any status label to a lowercase, trimmed key
 // const statusKey = (val) => (val || "").toString().trim().toLowerCase();
 
 // const resolveCandidateBundle = (item) => {
@@ -462,7 +456,7 @@
 // };
 
 // // ---------------------------------------------------------------------------
-// // Shared status → color palette (badges + folder tabs stay in sync)
+// // Shared status → color palette
 // // ---------------------------------------------------------------------------
 // const STATUS_COLOR_MAP = {
 //   active: { badge: "bg-green-50 text-green-700 border-green-200", dot: "bg-green-500" },
@@ -1038,7 +1032,13 @@
 //     queryKey: ["applicationStatuses"],
 //     queryFn: async () => {
 //       const result = await applicantsApiService.getApplicationStatuses();
-//       const list = result?.data || result || [];
+//       // The API returns { data: { total_records, data: [...] } }
+//       let list = result?.data?.data || result?.data || result || [];
+//       // If list is still an object with a 'data' property, drill one more level
+//       if (list && !Array.isArray(list) && list.data) {
+//         list = list.data;
+//       }
+//       // Ensure we have an array
 //       return Array.isArray(list) ? list : [];
 //     },
 //     staleTime: 10 * 60 * 1000,
@@ -1523,8 +1523,6 @@
 //       return { totalMoved, totalFailed, selectedFolder };
 //     },
 //     onSuccess: ({ totalMoved, totalFailed, selectedFolder }) => {
-//       // Cards already jumped to the target folder instantly in onMutate.
-//       // This just reports the outcome and reconciles with the server.
 //       if (totalMoved > 0) {
 //         const folderLabel =
 //           selectedFolder.name.charAt(0).toUpperCase() +
@@ -1538,8 +1536,6 @@
 //         showError("Failed to move any applicants.");
 //       }
 //       setSelectedApplicants(new Set());
-//       // Re-sync with the server in the background — corrects any
-//       // applicant whose individual PATCH call actually failed.
 //       fetchApplicants();
 //     },
 //     onError: (error, _selectedFolder, context) => {
@@ -2743,6 +2739,11 @@ const CandidateCard = ({
   const visibleSkills = skillNames.slice(0, 8);
   const extraSkillsCount = skillNames.length - visibleSkills.length;
 
+  // For individual move: exclude current status
+  const otherStatuses = statusOptions.filter(
+    (opt) => statusKey(opt.name) !== statusKey(applicant.status)
+  );
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md hover:border-purple-200 transition-all w-full overflow-visible">
       {/* Top meta bar */}
@@ -2964,31 +2965,23 @@ const CandidateCard = ({
                       <div className="px-3 py-3 flex items-center justify-center">
                         <span className="inline-block w-4 h-4 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
                       </div>
-                    ) : statusOptions.length === 0 ? (
+                    ) : otherStatuses.length === 0 ? (
                       <div className="px-3 py-2 text-xs text-gray-400">
-                        No statuses available
+                        No other statuses available
                       </div>
                     ) : (
-                      statusOptions.map((opt) => {
-                        const isCurrent =
-                          statusKey(applicant.status) === statusKey(opt.name);
+                      otherStatuses.map((opt) => {
                         const isMoving = movingStatusId === opt.id;
                         return (
                           <button
                             key={opt.id}
                             onClick={(e) => handleMoveToSelect(e, opt)}
                             disabled={isMoving}
-                            className={`w-full text-left px-3 py-2 text-xs capitalize flex items-center justify-between gap-2 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-50 ${
-                              isCurrent
-                                ? "text-purple-600 font-medium bg-purple-50"
-                                : "text-gray-700"
-                            }`}
+                            className="w-full text-left px-3 py-2 text-xs capitalize flex items-center justify-between gap-2 hover:bg-purple-50 hover:text-purple-700 transition-colors disabled:opacity-50 text-gray-700"
                           >
                             <span>{opt.name}</span>
-                            {isMoving ? (
+                            {isMoving && (
                               <span className="inline-block w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
-                            ) : (
-                              isCurrent && <TbCheck size={14} />
                             )}
                           </button>
                         );
@@ -3827,6 +3820,25 @@ export default function JobApplicants() {
         ? `${jobDetails.experience_min ?? 0}-${jobDetails.experience_max ?? 0} yrs`
         : null;
 
+  // ─── Compute bulk move options: exclude any status that any selected applicant is currently in ──
+  const bulkMoveOptions = useMemo(() => {
+    if (selectedApplicants.size === 0) return statusOptions;
+    // Gather all status keys of selected applicants
+    const selectedStatusKeys = new Set();
+    selectedApplicants.forEach((id) => {
+      const applicant = applicants.find(
+        (a) => (a.application_id || a.candidate_id) === id,
+      );
+      if (applicant) {
+        selectedStatusKeys.add(statusKey(applicant.status));
+      }
+    });
+    // Filter out statuses that are currently held by at least one selected applicant
+    return statusOptions.filter(
+      (opt) => !selectedStatusKeys.has(statusKey(opt.name))
+    );
+  }, [selectedApplicants, statusOptions, applicants]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
@@ -4111,12 +4123,12 @@ export default function JobApplicants() {
                     <div className="px-3 py-4 flex items-center justify-center">
                       <span className="inline-block w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
                     </div>
-                  ) : statusOptions.length === 0 ? (
+                  ) : bulkMoveOptions.length === 0 ? (
                     <div className="px-3 py-3 text-xs text-gray-400 text-center">
-                      No folders available
+                      All selected applicants already have every status? No new folder available.
                     </div>
                   ) : (
-                    statusOptions.map((opt) => {
+                    bulkMoveOptions.map((opt) => {
                       const allInThisStatus = Array.from(selectedApplicants)
                         .map((id) =>
                           applicants.find(

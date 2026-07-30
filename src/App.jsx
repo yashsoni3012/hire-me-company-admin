@@ -126,6 +126,8 @@ import { AuthProvider, ProtectedRoute, useAuth } from "./context/AuthContext";
 // ─── Layout ─────────────────────────────────────────────────────────
 import DashboardLayout from "./components/layout/DashboardLayout";
 import MessageToggle from "./components/ui/MessageToggle";
+import SubscriptionPackage from "./pages/Subscription/SubscriptionPackage";
+import SubscriptionHistory from "./pages/Subscription/SubscriptionHistory";
 
 // ─── Lazy load all page components ─────────────────────────────────
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -308,6 +310,22 @@ export default function App() {
                   element={
                     <Suspense fallback={<PageLoader />}>
                       <JobPost />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="subscription-package"
+                  element={
+                    <Suspense fallback={<PageLoader />}>
+                      <SubscriptionPackage />
+                    </Suspense>
+                  }
+                />
+                <Route
+                  path="subscription-history"
+                  element={
+                    <Suspense fallback={<PageLoader />}>
+                      <SubscriptionHistory />
                     </Suspense>
                   }
                 />
