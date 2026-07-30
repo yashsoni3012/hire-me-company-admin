@@ -128,6 +128,7 @@ import DashboardLayout from "./components/layout/DashboardLayout";
 import MessageToggle from "./components/ui/MessageToggle";
 import SubscriptionPackage from "./pages/Subscription/SubscriptionPackage";
 import SubscriptionHistory from "./pages/Subscription/SubscriptionHistory";
+import SubscriptionTransaction from "./pages/Subscription/SubscriptionTransaction";
 
 // ─── Lazy load all page components ─────────────────────────────────
 const Dashboard = lazy(() => import("./pages/Dashboard"));
@@ -326,6 +327,14 @@ export default function App() {
                   element={
                     <Suspense fallback={<PageLoader />}>
                       <SubscriptionHistory />
+                    </Suspense>
+                  }
+                />
+                 <Route
+                  path="subscription-transaction"
+                  element={
+                    <Suspense fallback={<PageLoader />}>
+                      <SubscriptionTransaction />
                     </Suspense>
                   }
                 />

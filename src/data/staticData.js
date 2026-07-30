@@ -18,6 +18,7 @@ export const NAV_ITEMS = [
   { id: 'job-post', label: 'Post Job', icon: TbPlus, path: '/job-post' },
   { id: 'subscription-package', label: 'Subscription Packages', icon: TbPackage, path: '/subscription-package' },
   { id: 'subscription-history', label: 'Subscription History', icon: TbHistory, path: '/subscription-history' },
+  { id: 'subscription-transaction', label: 'Subscription Transactions', icon: TbHistory, path: '/subscription-transaction' },
 
   // { id: 'jobs', label: 'Job Listings', icon: TbBriefcase, path: '/jobs', badge: '12' },
 

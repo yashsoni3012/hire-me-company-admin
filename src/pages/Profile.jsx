@@ -449,7 +449,7 @@ export default function Profile() {
               <Card>
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="text-lg font-bold text-gray-800 dark:text-white">
+                    <h3 className="text-lg font-bold text-gray-800 ">
                       {companyData.company_name || "Company"}
                     </h3>
                     <p className="text-sm text-gray-400 dark:text-gray-500">
