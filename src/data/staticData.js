@@ -16,9 +16,11 @@ export const NAV_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: TbLayoutDashboard, path: '/' },
   { id: 'jobs', label: 'Job Listings', icon: TbBriefcase, path: '/jobs' },
   { id: 'job-post', label: 'Post Job', icon: TbPlus, path: '/job-post' },
-  { id: 'subscription-package', label: 'Subscription Packages', icon: TbPackage, path: '/subscription-package' },
-  // { id: 'subscription-history', label: 'Subscription History', icon: TbHistory, path: '/subscription-history' },
+  { id: 'subscription-package', label: 'Company Subscription', icon: TbPackage, path: '/company-subscription' },
+  { id: 'subscription-usage', label: 'Subscription Usage', icon: TbPackage, path: '/subscription-usage' },
+  { id: 'subscription-invoice', label: 'Subscription Invoice', icon: TbPackage, path: '/subscription-invoice' },
   { id: 'subscription-transaction', label: 'Subscription Transactions', icon: TbHistory, path: '/subscription-transaction' },
+  // { id: 'subscription-history', label: 'Subscription History', icon: TbHistory, path: '/subscription-history' },
 
   // { id: 'jobs', label: 'Job Listings', icon: TbBriefcase, path: '/jobs', badge: '12' },
 
