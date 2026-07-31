@@ -12,7 +12,8 @@
 // import { useAuth } from "../../context/AuthContext";
 // import { useToast } from "../../context/ToastContext";
 
-// const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+// // ✅ Fallback to a known API URL if the environment variable is missing
+// const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://hire-me-jobs.onrender.com";
 
 // const SubscriptionTransaction = () => {
 //   const { user } = useAuth();
@@ -31,11 +32,9 @@
 
 //   // ─── Get company_id from the logged‑in user ──────────────
 //   const getCompanyId = () => {
-//     // 1. Try from context
 //     if (user?.Companies && user.Companies.length > 0) {
 //       return user.Companies[0].company_id;
 //     }
-//     // 2. Try from localStorage (as fallback)
 //     try {
 //       const storedUser = localStorage.getItem("user");
 //       if (storedUser) {
@@ -44,7 +43,6 @@
 //           return parsed.Companies[0].company_id;
 //         }
 //       }
-//       // Also check if we stored company_id separately
 //       const storedCompanyId = localStorage.getItem("company_id");
 //       if (storedCompanyId) {
 //         return Number(storedCompanyId);
@@ -55,12 +53,28 @@
 
 //   const companyId = getCompanyId();
 
-//   // ─── 1. Fetch subscription plans (for name mapping) ──────
+//   // ─── Helper: fetch and ensure JSON response ──────────────
+//   const fetchJson = async (url) => {
+//     const response = await fetch(url);
+//     if (!response.ok) {
+//       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+//     }
+//     const text = await response.text();
+//     // If the response is HTML (e.g., a 404 page), throw a clear error
+//     if (text.trim().startsWith("<!DOCTYPE")) {
+//       throw new Error("Server returned HTML instead of JSON. Please check the API URL.");
+//     }
+//     try {
+//       return JSON.parse(text);
+//     } catch (e) {
+//       throw new Error("Invalid JSON response from server.");
+//     }
+//   };
+
+//   // ─── 1. Fetch subscription plans ──────────────────────────
 //   const fetchPlans = async () => {
 //     try {
-//       const response = await fetch(`${API_BASE_URL}/subscription-plans`);
-//       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//       const result = await response.json();
+//       const result = await fetchJson(`${API_BASE_URL}/subscription-plans`);
 //       const planList = result?.data || [];
 //       const map = {};
 //       planList.forEach((p) => {
@@ -69,6 +83,8 @@
 //       setPlansMap(map);
 //     } catch (err) {
 //       console.error("Failed to fetch plans:", err);
+//       // Don't let this break the whole page – we can still show transactions
+//       setPlansMap({});
 //     }
 //   };
 
@@ -81,11 +97,7 @@
 //       let nextUrl = `${API_BASE_URL}/subscription-transactions?page=1&limit=100`;
 
 //       while (nextUrl) {
-//         const response = await fetch(nextUrl);
-//         if (!response.ok) {
-//           throw new Error(`HTTP error! status: ${response.status}`);
-//         }
-//         const result = await response.json();
+//         const result = await fetchJson(nextUrl);
 //         const dataList = result?.data || [];
 //         allData = [...allData, ...dataList];
 
@@ -159,7 +171,6 @@
 //     setCurrentPage(page);
 //   };
 
-//   // ─── Refresh handler ────────────────────────────────────────
 //   const handleRefresh = () => {
 //     fetchAllTransactions();
 //   };
@@ -600,15 +611,15 @@ const SubscriptionTransaction = () => {
   const statusBadge = (isActive) => {
     if (isActive) {
       return (
-        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">
-          <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />
+        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium whitespace-nowrap">
+          <span className="w-1.5 h-1.5 bg-green-500 rounded-full shrink-0" />
           Active
         </span>
       );
     }
     return (
-      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">
-        <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium whitespace-nowrap">
+        <span className="w-1.5 h-1.5 bg-red-500 rounded-full shrink-0" />
         Inactive
       </span>
     );
@@ -617,20 +628,20 @@ const SubscriptionTransaction = () => {
   const paymentStatusBadge = (status) => {
     const s = status?.toLowerCase() || "";
     if (s === "success" || s === "captured") {
-      return <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium">Success</span>;
+      return <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-xs font-medium whitespace-nowrap">Success</span>;
     } else if (s === "pending") {
-      return <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-medium">Pending</span>;
+      return <span className="px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700 text-xs font-medium whitespace-nowrap">Pending</span>;
     } else if (s === "failed") {
-      return <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium">Failed</span>;
+      return <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700 text-xs font-medium whitespace-nowrap">Failed</span>;
     }
-    return <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">{status || "—"}</span>;
+    return <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 text-xs font-medium whitespace-nowrap">{status || "—"}</span>;
   };
 
   // ─── Render ─────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent"></div>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
+        <div className="inline-block animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-4 border-purple-600 border-t-transparent"></div>
         <p className="mt-4 text-gray-500 text-sm">Loading transactions...</p>
       </div>
     );
@@ -638,11 +649,11 @@ const SubscriptionTransaction = () => {
 
   if (error) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh]">
-        <p className="text-red-500 font-medium">{error}</p>
+      <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
+        <p className="text-red-500 font-medium text-sm sm:text-base">{error}</p>
         <button
           onClick={handleRefresh}
-          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+          className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 active:bg-purple-800 transition-colors"
         >
           <TbRefresh size={16} /> Retry
         </button>
@@ -656,14 +667,14 @@ const SubscriptionTransaction = () => {
       : null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8">
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-8">
       {/* ─── Header ──────────────────────────────────────────── */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4 mb-4 sm:mb-6">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
             Subscription Transactions
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-xs sm:text-sm text-gray-500 mt-1 break-words">
             {companyName ? (
               <>
                 Showing transactions for{" "}
@@ -676,7 +687,7 @@ const SubscriptionTransaction = () => {
         </div>
         <button
           onClick={handleRefresh}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 active:bg-purple-800 transition-colors w-full sm:w-auto shrink-0"
         >
           <TbRefresh size={16} /> Refresh
         </button>
@@ -684,38 +695,109 @@ const SubscriptionTransaction = () => {
 
       {/* ─── Table Card ──────────────────────────────────────── */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-gray-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-gray-100">
           <div className="relative w-full sm:w-72">
             <TbSearch size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="Search by company, plan, or transaction no..."
               className="w-full pl-9 pr-3 py-2 text-sm rounded-full border border-gray-200 bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-purple-100 focus:border-purple-300 transition-colors"
             />
           </div>
-          <div className="text-sm text-gray-500">
+          <div className="text-xs sm:text-sm text-gray-500 sm:shrink-0">
             {totalItems} total transaction{totalItems !== 1 ? "s" : ""}
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* ─── Mobile / tablet card list (below lg) ───────────── */}
+        <div className="lg:hidden divide-y divide-gray-100">
+          {currentItems.length === 0 ? (
+            <div className="px-5 py-8 text-center text-gray-400 text-sm">
+              No transactions found
+            </div>
+          ) : (
+            currentItems.map((tx, index) => {
+              const txCompanyName = tx.Company?.company_name || "—";
+              const planName = tx.SubscriptionPlan?.plan_name || "—";
+              return (
+                <div key={tx.id} className="px-4 sm:px-5 py-4 hover:bg-gray-50 transition-colors">
+                  <div className="flex items-start justify-between gap-3 mb-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-gray-400">#{startIndex + index + 1}</p>
+                      <p className="font-medium text-gray-800 break-words">{txCompanyName}</p>
+                    </div>
+                    <div className="shrink-0">{statusBadge(tx.is_status)}</div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span className="inline-block bg-blue-50 text-blue-700 text-xs font-medium px-2 py-0.5 rounded">
+                      {planName}
+                    </span>
+                    {paymentStatusBadge(tx.payment_status)}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div>
+                      <p className="text-xs text-gray-400">Transaction No</p>
+                      <p className="font-mono text-xs text-gray-700 break-all">
+                        {tx.transaction_no || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Gateway</p>
+                      <p className="text-gray-700">{tx.payment_gateway || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Base Price</p>
+                      <p className="text-gray-700">{formatCurrency(tx.base_price)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Discount</p>
+                      <p className="text-gray-700">{formatCurrency(tx.discount_price)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">GST</p>
+                      <p className="text-gray-700">{formatCurrency(tx.gst_amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400">Final Amount</p>
+                      <p className="font-semibold text-gray-800">
+                        {formatCurrency(tx.final_amount)}
+                      </p>
+                    </div>
+                    <div className="col-span-2">
+                      <p className="text-xs text-gray-400">Created At</p>
+                      <p className="text-xs text-gray-500">{formatDate(tx.created_at)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* ─── Desktop table (lg and up) ──────────────────────── */}
+        <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-sm text-left text-gray-600">
             <thead className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200">
               <tr>
-                <th className="px-5 py-3 font-medium">#</th>
-                <th className="px-5 py-3 font-medium">Company</th>
-                <th className="px-5 py-3 font-medium">Plan</th>
-                <th className="px-5 py-3 font-medium">Transaction No</th>
-                <th className="px-5 py-3 font-medium">Base Price</th>
-                <th className="px-5 py-3 font-medium">Discount</th>
-                <th className="px-5 py-3 font-medium">GST</th>
-                <th className="px-5 py-3 font-medium">Final Amount</th>
-                <th className="px-5 py-3 font-medium">Gateway</th>
-                <th className="px-5 py-3 font-medium">Payment Status</th>
-                <th className="px-5 py-3 font-medium">Status</th>
-                <th className="px-5 py-3 font-medium">Created At</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">#</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Company</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Plan</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Transaction No</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Base Price</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Discount</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">GST</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Final Amount</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Gateway</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Payment Status</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Status</th>
+                <th className="px-5 py-3 font-medium whitespace-nowrap">Created At</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -727,36 +809,36 @@ const SubscriptionTransaction = () => {
                 </tr>
               ) : (
                 currentItems.map((tx, index) => {
-                  const companyName = tx.Company?.company_name || "—";
+                  const txCompanyName = tx.Company?.company_name || "—";
                   const planName = tx.SubscriptionPlan?.plan_name || "—";
                   return (
                     <tr key={tx.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-5 py-3 text-gray-500">
+                      <td className="px-5 py-3 text-gray-500 whitespace-nowrap">
                         {startIndex + index + 1}
                       </td>
-                      <td className="px-5 py-3 font-medium text-gray-800">
-                        {companyName}
+                      <td className="px-5 py-3 font-medium text-gray-800 max-w-[180px] truncate">
+                        {txCompanyName}
                       </td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 whitespace-nowrap">
                         <span className="inline-block bg-blue-50 text-blue-700 text-xs font-medium px-2 py-0.5 rounded">
                           {planName}
                         </span>
                       </td>
-                      <td className="px-5 py-3 font-mono text-xs">
+                      <td className="px-5 py-3 font-mono text-xs whitespace-nowrap">
                         {tx.transaction_no || "—"}
                       </td>
-                      <td className="px-5 py-3">{formatCurrency(tx.base_price)}</td>
-                      <td className="px-5 py-3">{formatCurrency(tx.discount_price)}</td>
-                      <td className="px-5 py-3">{formatCurrency(tx.gst_amount)}</td>
-                      <td className="px-5 py-3 font-semibold text-gray-800">
+                      <td className="px-5 py-3 whitespace-nowrap">{formatCurrency(tx.base_price)}</td>
+                      <td className="px-5 py-3 whitespace-nowrap">{formatCurrency(tx.discount_price)}</td>
+                      <td className="px-5 py-3 whitespace-nowrap">{formatCurrency(tx.gst_amount)}</td>
+                      <td className="px-5 py-3 font-semibold text-gray-800 whitespace-nowrap">
                         {formatCurrency(tx.final_amount)}
                       </td>
-                      <td className="px-5 py-3">{tx.payment_gateway || "—"}</td>
-                      <td className="px-5 py-3">
+                      <td className="px-5 py-3 whitespace-nowrap">{tx.payment_gateway || "—"}</td>
+                      <td className="px-5 py-3 whitespace-nowrap">
                         {paymentStatusBadge(tx.payment_status)}
                       </td>
-                      <td className="px-5 py-3">{statusBadge(tx.is_status)}</td>
-                      <td className="px-5 py-3 text-xs text-gray-500">
+                      <td className="px-5 py-3 whitespace-nowrap">{statusBadge(tx.is_status)}</td>
+                      <td className="px-5 py-3 text-xs text-gray-500 whitespace-nowrap">
                         {formatDate(tx.created_at)}
                       </td>
                     </tr>
@@ -767,13 +849,13 @@ const SubscriptionTransaction = () => {
           </table>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3 border-t border-gray-100">
-          <p className="text-xs text-gray-400">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 sm:px-5 py-3 border-t border-gray-100">
+          <p className="text-xs text-gray-400 text-center sm:text-left">
             Showing {totalItems === 0 ? 0 : startIndex + 1}–
             {Math.min(endIndex, totalItems)} of {totalItems} transactions
           </p>
           {totalPages > 1 && (
-            <div className="flex items-center gap-1">
+            <div className="flex items-center justify-center gap-1">
               <button
                 onClick={() => goToPage(1)}
                 disabled={currentPage === 1}
@@ -788,7 +870,7 @@ const SubscriptionTransaction = () => {
               >
                 <TbChevronLeft size={14} />
               </button>
-              <span className="px-3 text-xs text-gray-600">
+              <span className="px-2 sm:px-3 text-xs text-gray-600 whitespace-nowrap">
                 Page {currentPage} of {totalPages}
               </span>
               <button
