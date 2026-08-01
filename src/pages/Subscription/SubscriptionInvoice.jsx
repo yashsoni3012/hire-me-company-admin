@@ -1,3 +1,5 @@
+
+
 // import React, { useState, useEffect, useMemo, useRef } from "react";
 // import {
 //   TbRefresh,
@@ -9,11 +11,6 @@
 //   TbBuildingSkyscraper,
 //   TbFileInvoice,
 //   TbArrowRight,
-//   TbCheck,
-//   TbX,
-//   TbCurrencyRupee,
-//   TbCalendar,
-//   TbHash,
 // } from "react-icons/tb";
 // import { useToast } from "../../context/ToastContext";
 
@@ -430,33 +427,35 @@
 //                           <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 shrink-0">
 //                             <TbBuildingSkyscraper size={14} className="text-gray-500" />
 //                           </span>
-//                           <span className="truncate max-w-[140px]">{item.company_name}</span>
+//                           <span className="truncate max-w-[140px]" title={item.company_name}>
+//                             {item.company_name}
+//                           </span>
 //                         </div>
 //                       </td>
 //                       <td className="px-4 sm:px-5 py-3.5">
-//                         <span className="inline-block bg-blue-50 text-blue-700 text-xs font-semibold px-2.5 py-1 rounded-full ring-1 ring-inset ring-blue-100">
+//                         <span className="inline-block bg-blue-50 text-blue-700 text-xs font-semibold px-2.5 py-1 rounded-full ring-1 ring-inset ring-blue-100 whitespace-nowrap">
 //                           {item.plan_name}
 //                         </span>
 //                       </td>
 //                       <td className="px-4 sm:px-5 py-3.5">
 //                         <div className="flex flex-col gap-0.5">
-//                           <span className="font-mono text-xs text-gray-600">
+//                           <span className="font-mono text-xs text-gray-600 whitespace-nowrap">
 //                             {item.transaction_no}
 //                           </span>
 //                           {item.payment_gateway !== "—" && (
-//                             <span className="text-[10px] text-gray-400">
+//                             <span className="text-[10px] text-gray-400 capitalize">
 //                               {item.payment_gateway}
 //                             </span>
 //                           )}
 //                         </div>
 //                       </td>
-//                       <td className="px-4 sm:px-5 py-3.5 text-right tabular-nums font-medium text-gray-700">
+//                       <td className="px-4 sm:px-5 py-3.5 text-right tabular-nums font-medium text-gray-700 whitespace-nowrap">
 //                         {formatCurrency(item.subtotal)}
 //                       </td>
-//                       <td className="px-4 sm:px-5 py-3.5 text-right tabular-nums text-gray-600">
+//                       <td className="px-4 sm:px-5 py-3.5 text-right tabular-nums text-gray-600 whitespace-nowrap">
 //                         {formatCurrency(item.gst)}
 //                       </td>
-//                       <td className="px-4 sm:px-5 py-3.5 text-right tabular-nums font-bold text-gray-900">
+//                       <td className="px-4 sm:px-5 py-3.5 text-right tabular-nums font-bold text-gray-900 whitespace-nowrap">
 //                         {formatCurrency(item.grand_total)}
 //                       </td>
 //                       <td className="px-4 sm:px-5 py-3.5">
@@ -538,7 +537,7 @@
 
 // export default SubscriptionInvoice;
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   TbRefresh,
   TbSearch,
@@ -551,25 +550,82 @@ import {
   TbArrowRight,
 } from "react-icons/tb";
 import { useToast } from "../../context/ToastContext";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://hire-me-jobs.onrender.com";
 
+// ─── Helper: fetch and ensure JSON response ──────────────
+const fetchJson = async (url) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const text = await response.text();
+  if (text.trim().startsWith("<!DOCTYPE")) {
+    throw new Error("Server returned HTML instead of JSON. Please check the API URL.");
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error("Invalid JSON response from server.");
+  }
+};
+
+// ─── Query function: fetch invoices for a company (server‑side filtered) ──
+const fetchInvoicesForCompany = async (companyId) => {
+  if (!companyId) return [];
+  let allData = [];
+  let nextUrl = `${API_BASE_URL}/invoices?company_id=${companyId}&page=1&limit=100`;
+
+  while (nextUrl) {
+    const result = await fetchJson(nextUrl);
+    const dataList = result?.data || [];
+    allData = [...allData, ...dataList];
+    const links = result?.pagination?.links;
+    nextUrl = links?.next || null;
+  }
+  return allData;
+};
+
+// ─── Query function: fetch all transactions (to build a lookup map) ──
+const fetchTransactionsMap = async () => {
+  let allData = [];
+  let nextUrl = `${API_BASE_URL}/subscription-transactions?page=1&limit=100`;
+
+  while (nextUrl) {
+    const result = await fetchJson(nextUrl);
+    const dataList = result?.data || [];
+    allData = [...allData, ...dataList];
+    const links = result?.pagination?.links;
+    nextUrl = links?.next || null;
+  }
+
+  // Build map: transaction_id -> transaction details
+  const map = {};
+  allData.forEach((tx) => {
+    map[tx.id] = {
+      transaction_no: tx.transaction_no,
+      base_price: tx.base_price,
+      discount_price: tx.discount_price,
+      gst_amount: tx.gst_amount,
+      final_amount: tx.final_amount,
+      payment_gateway: tx.payment_gateway,
+      payment_status: tx.payment_status,
+      payment_reference: tx.payment_reference,
+      gateway_order_id: tx.gateway_order_id,
+      plan_name: tx.SubscriptionPlan?.plan_name || "N/A",
+      subscription_type: tx.CompanySubscription?.subscription_type || "N/A",
+      offer_name: tx.SubscriptionPlanOffer?.offer_name || null,
+      coupon_code: tx.SubscriptionCoupon?.coupon_code || null,
+      created_at: tx.created_at,
+    };
+  });
+  return map;
+};
+
 const SubscriptionInvoice = () => {
   const { showError, showSuccess } = useToast();
-
-  // ─── State ──────────────────────────────────────────────────
-  const [allInvoices, setAllInvoices] = useState([]);
-  const [transactionsMap, setTransactionsMap] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showScrollHint, setShowScrollHint] = useState(true);
-
-  // Client-side pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const scrollContainerRef = useRef(null);
+  const queryClient = useQueryClient();
 
   // ─── Get company_id from localStorage ─────────────────────
   const getCompanyId = () => {
@@ -591,110 +647,49 @@ const SubscriptionInvoice = () => {
 
   const companyId = getCompanyId();
 
-  // ─── Helper: fetch with JSON check ──────────────────────
-  const fetchJson = async (url) => {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const text = await response.text();
-    if (text.trim().startsWith("<!DOCTYPE")) {
-      throw new Error("Server returned HTML instead of JSON. Please check the API URL.");
-    }
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      throw new Error("Invalid JSON response from server.");
-    }
-  };
-
-  // ─── 1. Fetch subscription transactions ──────────────────
-  const fetchTransactions = async () => {
-    try {
-      const result = await fetchJson(`${API_BASE_URL}/subscription-transactions`);
-      const list = result?.data || [];
-      // Build a map: transaction_id -> transaction details
-      const map = {};
-      list.forEach((tx) => {
-        map[tx.id] = {
-          transaction_no: tx.transaction_no,
-          base_price: tx.base_price,
-          discount_price: tx.discount_price,
-          gst_amount: tx.gst_amount,
-          final_amount: tx.final_amount,
-          payment_gateway: tx.payment_gateway,
-          payment_status: tx.payment_status,
-          payment_reference: tx.payment_reference,
-          gateway_order_id: tx.gateway_order_id,
-          plan_name: tx.SubscriptionPlan?.plan_name || "N/A",
-          subscription_type: tx.CompanySubscription?.subscription_type || "N/A",
-          offer_name: tx.SubscriptionPlanOffer?.offer_name || null,
-          coupon_code: tx.SubscriptionCoupon?.coupon_code || null,
-          created_at: tx.created_at,
-        };
-      });
-      setTransactionsMap(map);
-      return map;
-    } catch (err) {
-      console.error("Failed to fetch transactions:", err);
-      return {};
-    }
-  };
-
-  // ─── 2. Fetch ALL invoices (follow pagination) ──────────
-  const fetchAllInvoices = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      let allData = [];
-      let nextUrl = `${API_BASE_URL}/invoices?page=1&limit=100`;
-
-      while (nextUrl) {
-        const result = await fetchJson(nextUrl);
-        const dataList = result?.data || [];
-        allData = [...allData, ...dataList];
-
-        const links = result?.pagination?.links;
-        if (links && links.next) {
-          nextUrl = links.next;
-        } else {
-          nextUrl = null;
-        }
-      }
-
-      setAllInvoices(allData);
-    } catch (err) {
-      setError(err.message || "Failed to load invoices.");
+  // ─── React Query: fetch invoices ──────────────────────────
+  const {
+    data: invoices = [],
+    isLoading: invoicesLoading,
+    isError: invoicesError,
+    error: invoicesErrorObj,
+    refetch: refetchInvoices,
+  } = useQuery({
+    queryKey: ["invoices", companyId],
+    queryFn: () => fetchInvoicesForCompany(companyId),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    enabled: !!companyId,
+    onError: (err) => {
       showError(err.message || "Failed to load invoices.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
-  // ─── Initial load ──────────────────────────────────────────
-  useEffect(() => {
-    if (!companyId) {
-      setLoading(false);
-      setError("No company associated with your account.");
-      return;
-    }
-    const init = async () => {
-      await fetchTransactions();
-      await fetchAllInvoices();
-    };
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ─── React Query: fetch transactions map ──────────────────
+  const {
+    data: transactionsMap = {},
+    isLoading: transactionsLoading,
+    isError: transactionsError,
+    refetch: refetchTransactions,
+  } = useQuery({
+    queryKey: ["transactionsMap"],
+    queryFn: fetchTransactionsMap,
+    staleTime: 10 * 60 * 1000, // 10 minutes
+    enabled: !!companyId,
+    onError: (err) => {
+      showError(err.message || "Failed to load transactions.");
+    },
+  });
 
-  // ─── Filter invoices for the current company ──────────────
-  const companyInvoices = useMemo(() => {
-    if (!companyId) return [];
-    return allInvoices.filter((invoice) => invoice.Company?.company_id === companyId);
-  }, [allInvoices, companyId]);
+  // ─── State for client‑side search and pagination ──────────
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showScrollHint, setShowScrollHint] = useState(true);
+  const scrollContainerRef = useRef(null);
+  const itemsPerPage = 10;
 
-  // ─── Enrich invoices with transaction details ────────────
+  // ─── Enrich invoices with transaction details ─────────────
   const enrichedInvoices = useMemo(() => {
-    return companyInvoices.map((invoice) => {
+    return invoices.map((invoice) => {
       const txId = invoice.SubscriptionTransaction?.id;
       const tx = txId ? transactionsMap[txId] : null;
 
@@ -715,7 +710,7 @@ const SubscriptionInvoice = () => {
         company_name: invoice.Company?.company_name || "N/A",
       };
     });
-  }, [companyInvoices, transactionsMap]);
+  }, [invoices, transactionsMap]);
 
   // ─── Client‑side search ────────────────────────────────────
   const filteredInvoices = useMemo(() => {
@@ -750,7 +745,9 @@ const SubscriptionInvoice = () => {
   };
 
   const handleRefresh = () => {
-    fetchAllInvoices();
+    queryClient.invalidateQueries({ queryKey: ["invoices", companyId] });
+    queryClient.invalidateQueries({ queryKey: ["transactionsMap"] });
+    showSuccess("Refreshed data");
   };
 
   const handleTableScroll = (e) => {
@@ -758,6 +755,10 @@ const SubscriptionInvoice = () => {
       setShowScrollHint(false);
     }
   };
+
+  // ─── Loading / error states ──────────────────────────────
+  const loading = invoicesLoading || transactionsLoading;
+  const error = invoicesError || transactionsError;
 
   // ─── Helpers ─────────────────────────────────────────────────
   const formatCurrency = (amount) => {
@@ -843,7 +844,9 @@ const SubscriptionInvoice = () => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
-        <p className="text-red-500 font-medium">{error}</p>
+        <p className="text-red-500 font-medium">
+          {invoicesErrorObj?.message || "Failed to load invoices."}
+        </p>
         <button
           onClick={handleRefresh}
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"

@@ -127,7 +127,6 @@ import { AuthProvider, ProtectedRoute, useAuth } from "./context/AuthContext";
 import DashboardLayout from "./components/layout/DashboardLayout";
 import MessageToggle from "./components/ui/MessageToggle";
 import SubscriptionPackage from "./pages/Subscription/SubscriptionPackage";
-import SubscriptionHistory from "./pages/Subscription/SubscriptionHistory";
 import SubscriptionTransaction from "./pages/Subscription/SubscriptionTransaction";
 import SubscriptionUsage from "./pages/Subscription/SubscriptionUsage";
 import SubscriptionInvoice from "./pages/Subscription/SubscriptionInvoice";
@@ -340,14 +339,7 @@ export default function App() {
                     </Suspense>
                   }
                 />
-                <Route
-                  path="subscription-history"
-                  element={
-                    <Suspense fallback={<PageLoader />}>
-                      <SubscriptionHistory />
-                    </Suspense>
-                  }
-                />
+               
                  <Route
                   path="subscription-transaction"
                   element={

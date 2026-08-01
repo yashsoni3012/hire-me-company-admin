@@ -1,3 +1,4 @@
+
 // import React, { useState, useEffect, useMemo, useRef } from "react";
 // import {
 //   TbRefresh,
@@ -423,10 +424,20 @@
 //                         {item.subscription_type || "—"}
 //                       </td>
 //                       <td className="px-4 sm:px-5 py-3.5">
-//                         <div className="font-semibold text-gray-800">{item.feature_name}</div>
-//                         {item.feature_display_value && item.feature_display_value !== "N/A" && (
-//                           <div className="text-xs text-gray-400 mt-0.5">{item.feature_display_value}</div>
-//                         )}
+//                         {/* ✅ Feature column with truncation + ellipsis */}
+//                         <div className="max-w-[200px]">
+//                           <div className="font-semibold text-gray-800 truncate" title={item.feature_name}>
+//                             {item.feature_name}
+//                           </div>
+//                           {item.feature_display_value && item.feature_display_value !== "N/A" && (
+//                             <div
+//                               className="text-xs text-gray-400 mt-0.5 truncate"
+//                               title={item.feature_display_value}
+//                             >
+//                               {item.feature_display_value}
+//                             </div>
+//                           )}
+//                         </div>
 //                       </td>
 //                       <td className="px-4 sm:px-5 py-3.5 font-semibold text-gray-800 text-right tabular-nums">
 //                         {item.allocated_value}
@@ -524,7 +535,7 @@
 
 // export default SubscriptionUsage;
 
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   TbRefresh,
   TbSearch,
@@ -539,26 +550,75 @@ import {
   TbArrowRight,
 } from "react-icons/tb";
 import { useToast } from "../../context/ToastContext";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "https://hire-me-jobs.onrender.com";
 
+// ─── Helper: fetch and ensure JSON response ──────────────
+const fetchJson = async (url) => {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  const text = await response.text();
+  if (text.trim().startsWith("<!DOCTYPE")) {
+    throw new Error("Server returned HTML instead of JSON. Please check the API URL.");
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error("Invalid JSON response from server.");
+  }
+};
+
+// ─── Query function: fetch subscription usage for a company ──
+const fetchUsageForCompany = async (companyId) => {
+  if (!companyId) return [];
+  let allData = [];
+  let nextUrl = `${API_BASE_URL}/subscription-usage?company_id=${companyId}&page=1&limit=100`;
+
+  while (nextUrl) {
+    const result = await fetchJson(nextUrl);
+    const dataList = result?.data || [];
+    allData = [...allData, ...dataList];
+    const links = result?.pagination?.links;
+    nextUrl = links?.next || null;
+  }
+  return allData;
+};
+
+// ─── Query function: fetch company subscriptions ──────────
+const fetchCompanySubscriptions = async () => {
+  const result = await fetchJson(`${API_BASE_URL}/company-subscriptions`);
+  return result?.data || [];
+};
+
+// ─── Query function: fetch subscription plan features ──────
+const fetchPlanFeaturesMap = async () => {
+  const result = await fetchJson(`${API_BASE_URL}/subscription-plan-features`);
+  const list = result?.data || [];
+  const map = {};
+  list.forEach((item) => {
+    const planId = item.subscription_plan_id;
+    if (!map[planId]) map[planId] = [];
+    map[planId].push({
+      id: item.id,
+      feature_id: item.subscription_features_id,
+      feature_name: item.SubscriptionFeature?.feature_name || "Unknown Feature",
+      value: item.value,
+      value_type: item.value_type,
+      unit: item.unit,
+      display_value: item.display_value,
+      is_unlimited: item.is_unlimited,
+      status: item.status,
+    });
+  });
+  return map;
+};
+
 const SubscriptionUsage = () => {
   const { showError, showSuccess } = useToast();
-
-  // ─── State ──────────────────────────────────────────────────
-  const [allUsage, setAllUsage] = useState([]);
-  const [companySubscriptions, setCompanySubscriptions] = useState([]);
-  const [planFeaturesMap, setPlanFeaturesMap] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showScrollHint, setShowScrollHint] = useState(true);
-
-  // Client-side pagination
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const scrollContainerRef = useRef(null);
+  const queryClient = useQueryClient();
 
   // ─── Get company_id from localStorage ─────────────────────
   const getCompanyId = () => {
@@ -580,120 +640,57 @@ const SubscriptionUsage = () => {
 
   const companyId = getCompanyId();
 
-  // ─── Helper: fetch with JSON check ──────────────────────
-  const fetchJson = async (url) => {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-    }
-    const text = await response.text();
-    if (text.trim().startsWith("<!DOCTYPE")) {
-      throw new Error("Server returned HTML instead of JSON. Please check the API URL.");
-    }
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      throw new Error("Invalid JSON response from server.");
-    }
-  };
-
-  // ─── 1. Fetch company subscriptions ──────────────────────
-  const fetchCompanySubscriptions = async () => {
-    try {
-      const result = await fetchJson(`${API_BASE_URL}/company-subscriptions`);
-      const list = result?.data || [];
-      setCompanySubscriptions(list);
-      return list;
-    } catch (err) {
-      console.error("Failed to fetch company subscriptions:", err);
-      return [];
-    }
-  };
-
-  // ─── 2. Fetch subscription plan features ──────────────────
-  const fetchPlanFeatures = async () => {
-    try {
-      const result = await fetchJson(`${API_BASE_URL}/subscription-plan-features`);
-      const list = result?.data || [];
-      const map = {};
-      list.forEach((item) => {
-        const planId = item.subscription_plan_id;
-        if (!map[planId]) map[planId] = [];
-        map[planId].push({
-          id: item.id,
-          feature_id: item.subscription_features_id,
-          feature_name: item.SubscriptionFeature?.feature_name || "Unknown Feature",
-          value: item.value,
-          value_type: item.value_type,
-          unit: item.unit,
-          display_value: item.display_value,
-          is_unlimited: item.is_unlimited,
-          status: item.status,
-        });
-      });
-      setPlanFeaturesMap(map);
-      return map;
-    } catch (err) {
-      console.error("Failed to fetch plan features:", err);
-      return {};
-    }
-  };
-
-  // ─── 3. Fetch ALL subscription usage (follow pagination) ──
-  const fetchAllUsage = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      let allData = [];
-      let nextUrl = `${API_BASE_URL}/subscription-usage?page=1&limit=100`;
-
-      while (nextUrl) {
-        const result = await fetchJson(nextUrl);
-        const dataList = result?.data || [];
-        allData = [...allData, ...dataList];
-
-        const links = result?.pagination?.links;
-        if (links && links.next) {
-          nextUrl = links.next;
-        } else {
-          nextUrl = null;
-        }
-      }
-
-      setAllUsage(allData);
-    } catch (err) {
-      setError(err.message || "Failed to load subscription usage.");
+  // ─── React Query: fetch subscription usage ──────────────
+  const {
+    data: allUsage = [],
+    isLoading: usageLoading,
+    isError: usageError,
+    error: usageErrorObj,
+    refetch: refetchUsage,
+  } = useQuery({
+    queryKey: ["subscriptionUsage", companyId],
+    queryFn: () => fetchUsageForCompany(companyId),
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    enabled: !!companyId,
+    onError: (err) => {
       showError(err.message || "Failed to load subscription usage.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+  });
 
-  // ─── Initial load ──────────────────────────────────────────
-  useEffect(() => {
-    if (!companyId) {
-      setLoading(false);
-      setError("No company associated with your account.");
-      return;
-    }
-    const init = async () => {
-      await fetchCompanySubscriptions();
-      await fetchPlanFeatures();
-      await fetchAllUsage();
-    };
-    init();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // ─── React Query: fetch company subscriptions ────────────
+  const {
+    data: companySubscriptions = [],
+    isLoading: subscriptionsLoading,
+    isError: subscriptionsError,
+  } = useQuery({
+    queryKey: ["companySubscriptions"],
+    queryFn: fetchCompanySubscriptions,
+    staleTime: 5 * 60 * 1000,
+    enabled: !!companyId,
+  });
 
-  // ─── Filter usage for the current company ────────────────
-  const companyUsage = useMemo(() => {
-    if (!companyId) return [];
-    return allUsage.filter((usage) => usage.company_id === companyId);
-  }, [allUsage, companyId]);
+  // ─── React Query: fetch plan features map ──────────────
+  const {
+    data: planFeaturesMap = {},
+    isLoading: featuresLoading,
+    isError: featuresError,
+  } = useQuery({
+    queryKey: ["planFeaturesMap"],
+    queryFn: fetchPlanFeaturesMap,
+    staleTime: 10 * 60 * 1000,
+    enabled: !!companyId,
+  });
+
+  // ─── State for client‑side search and pagination ──────────
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showScrollHint, setShowScrollHint] = useState(true);
+  const scrollContainerRef = useRef(null);
+  const itemsPerPage = 10;
 
   // ─── Enrich usage with subscription & feature details ──
   const enrichedUsage = useMemo(() => {
-    return companyUsage.map((usage) => {
+    return allUsage.map((usage) => {
       const subscription = companySubscriptions.find(
         (sub) => sub.id === usage.company_subscription_id
       );
@@ -717,7 +714,7 @@ const SubscriptionUsage = () => {
         company_name: usage.Company?.company_name || "N/A",
       };
     });
-  }, [companyUsage, companySubscriptions, planFeaturesMap]);
+  }, [allUsage, companySubscriptions, planFeaturesMap]);
 
   // ─── Client‑side search ────────────────────────────────────
   const filteredUsage = useMemo(() => {
@@ -748,7 +745,10 @@ const SubscriptionUsage = () => {
   };
 
   const handleRefresh = () => {
-    fetchAllUsage();
+    queryClient.invalidateQueries({ queryKey: ["subscriptionUsage", companyId] });
+    queryClient.invalidateQueries({ queryKey: ["companySubscriptions"] });
+    queryClient.invalidateQueries({ queryKey: ["planFeaturesMap"] });
+    showSuccess("Refreshed data");
   };
 
   const handleTableScroll = (e) => {
@@ -756,6 +756,10 @@ const SubscriptionUsage = () => {
       setShowScrollHint(false);
     }
   };
+
+  // ─── Loading / error states ──────────────────────────────
+  const loading = usageLoading || subscriptionsLoading || featuresLoading;
+  const error = usageError || subscriptionsError || featuresError;
 
   // ─── Helpers ─────────────────────────────────────────────────
   const formatDateTime = (dateStr) => {
@@ -818,7 +822,9 @@ const SubscriptionUsage = () => {
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] px-4 text-center">
-        <p className="text-red-500 font-medium">{error}</p>
+        <p className="text-red-500 font-medium">
+          {usageErrorObj?.message || "Failed to load subscription usage."}
+        </p>
         <button
           onClick={handleRefresh}
           className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 transition-colors"
@@ -885,7 +891,7 @@ const SubscriptionUsage = () => {
           </div>
         </div>
 
-        {/* ─── Table (scrolls horizontally on smaller screens) ─────────── */}
+        {/* ─── Table ────────────────────────────────────────── */}
         <div className="relative">
           <div
             ref={scrollContainerRef}
@@ -934,7 +940,9 @@ const SubscriptionUsage = () => {
                           <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-gray-100 shrink-0">
                             <TbBuildingSkyscraper size={14} className="text-gray-500" />
                           </span>
-                          <span className="truncate max-w-[160px]">{item.company_name}</span>
+                          <span className="truncate max-w-[160px]" title={item.company_name}>
+                            {item.company_name}
+                          </span>
                         </div>
                       </td>
                       <td className="px-4 sm:px-5 py-3.5">
@@ -949,7 +957,6 @@ const SubscriptionUsage = () => {
                         {item.subscription_type || "—"}
                       </td>
                       <td className="px-4 sm:px-5 py-3.5">
-                        {/* ✅ Feature column with truncation + ellipsis */}
                         <div className="max-w-[200px]">
                           <div className="font-semibold text-gray-800 truncate" title={item.feature_name}>
                             {item.feature_name}
@@ -1000,7 +1007,7 @@ const SubscriptionUsage = () => {
             </table>
           </div>
 
-          {/* Scroll hint gradient + label, mobile/tablet only */}
+          {/* Scroll hint */}
           {currentItems.length > 0 && showScrollHint && (
             <div className="lg:hidden pointer-events-none absolute top-0 right-0 h-full w-16 bg-gradient-to-l from-white via-white/80 to-transparent flex items-center justify-end pr-1">
               <span className="flex items-center gap-0.5 text-gray-400 animate-pulse">
