@@ -9,29 +9,25 @@
 //   const [user, setUser] = useState(null);
 //   const [isAuthenticated, setIsAuthenticated] = useState(false);
 //   const [loading, setLoading] = useState(true);
-//   const [token, setToken] = useState(null);
 //   const { showSuccess, showError } = useToast();
 
-//   // On mount, restore session from localStorage
+//   // On mount, restore user from localStorage
 //   useEffect(() => {
-//     const savedToken = localStorage.getItem("token");
 //     const savedUser = localStorage.getItem("user");
-//     if (savedToken && savedUser) {
+//     if (savedUser) {
 //       try {
 //         const userData = JSON.parse(savedUser);
 //         setUser(userData);
-//         setToken(savedToken);
 //         setIsAuthenticated(true);
 //       } catch (error) {
 //         console.error("Failed to parse user data:", error);
-//         localStorage.removeItem("token");
 //         localStorage.removeItem("user");
 //       }
 //     }
 //     setLoading(false);
 //   }, []);
 
-//   // ---------- LOGIN ----------
+//   // ---------- LOGIN (token‑optional) ----------
 //   const login = async (email, password) => {
 //     try {
 //       const response = await fetch(buildApiUrl("/company-users/login"), {
@@ -44,23 +40,53 @@
 //       console.log("Login API response:", data);
 
 //       if (!response.ok) {
-//         // The server may send a message in data.message or data.error
 //         const errorMsg = data.message || data.error || "Invalid credentials";
 //         throw new Error(errorMsg);
 //       }
 
-//       // Our API wraps token and user inside a `data` object
-//       const { token: authToken, user: userData } = data.data || {};
-
-//       if (!authToken || !userData) {
-//         throw new Error("Incomplete response from server");
+//       // Extract user from response (try multiple locations)
+//       let userData = null;
+//       if (data.data && data.data.user) {
+//         userData = data.data.user;
+//       } else if (data.user) {
+//         userData = data.user;
+//       } else if (data.data) {
+//         userData = data.data; // fallback: maybe the whole data is the user
 //       }
 
-//       // Save to state & localStorage
-//       setToken(authToken);
+//       if (!userData) {
+//         throw new Error("User data missing from server response");
+//       }
+
+//       // ----- Optional: try to grab a token (if any) -----
+//       let authToken = null;
+//       // Check body
+//       if (data.data && data.data.token) authToken = data.data.token;
+//       else if (data.data && data.data.accessToken) authToken = data.data.accessToken;
+//       else if (data.token) authToken = data.token;
+//       else if (data.accessToken) authToken = data.accessToken;
+//       // Check headers
+//       if (!authToken) {
+//         const headerToken = response.headers.get("Authorization");
+//         if (headerToken && headerToken.startsWith("Bearer ")) {
+//           authToken = headerToken.slice(7);
+//         } else {
+//           authToken = response.headers.get("x-access-token");
+//         }
+//       }
+
+//       // If token exists, store it (optional)
+//       if (authToken) {
+//         localStorage.setItem("token", authToken);
+//       } else {
+//         console.warn("No token returned from login API – relying on session cookies.");
+//         // Remove any stale token to avoid confusion
+//         localStorage.removeItem("token");
+//       }
+
+//       // Save user and mark authenticated
 //       setUser(userData);
 //       setIsAuthenticated(true);
-//       localStorage.setItem("token", authToken);
 //       localStorage.setItem("user", JSON.stringify(userData));
 
 //       showSuccess(data.message || "Login successful! Welcome back.");
@@ -72,16 +98,10 @@
 //     }
 //   };
 
-//   // ---------- REGISTER (SIGN UP) ----------
+//   // ---------- REGISTER (unchanged) ----------
 //   const register = async (email, password, mobile) => {
 //     try {
-//       const payload = {
-//         email,
-//         password,
-//         mobile,
-//         login_type: "email",
-//       };
-
+//       const payload = { email, password, mobile, login_type: "email" };
 //       const response = await fetch(buildApiUrl("/company-users/"), {
 //         method: "POST",
 //         headers: { "Content-Type": "application/json" },
@@ -96,8 +116,6 @@
 //         throw new Error(errorMsg);
 //       }
 
-//       // If registration returns a similar structure, we could auto-login,
-//       // but we'll just show success and let user switch to login.
 //       showSuccess(data.message || "Account created! You can now log in.");
 //       return { success: true, user: data.data?.user || data };
 //     } catch (error) {
@@ -110,7 +128,6 @@
 //   // ---------- LOGOUT ----------
 //   const logout = () => {
 //     setUser(null);
-//     setToken(null);
 //     setIsAuthenticated(false);
 //     localStorage.removeItem("token");
 //     localStorage.removeItem("user");
@@ -145,12 +162,13 @@
 //     user,
 //     isAuthenticated,
 //     loading,
-//     token,
 //     login,
 //     register,
 //     logout,
 //     updateUser,
 //     forgotPassword,
+//     // If you still need the token for some reason, you can retrieve it from localStorage:
+//     token: localStorage.getItem("token") || null,
 //   };
 
 //   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -189,7 +207,7 @@
 //   return isAuthenticated ? children : null;
 // }
 
-
+// src/context/AuthContext.jsx
 import { createContext, useContext, useState, useEffect } from "react";
 import { useToast } from "./ToastContext";
 import { useNavigate } from "react-router-dom";
@@ -203,23 +221,64 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
   const { showSuccess, showError } = useToast();
 
-  // On mount, restore user from localStorage
+  // ---------- On mount, restore user from localStorage ----------
   useEffect(() => {
     const savedUser = localStorage.getItem("user");
+    const token = localStorage.getItem("token");
+    
     if (savedUser) {
       try {
         const userData = JSON.parse(savedUser);
         setUser(userData);
         setIsAuthenticated(true);
+        setLoading(false);
+        return;
       } catch (error) {
         console.error("Failed to parse user data:", error);
         localStorage.removeItem("user");
       }
     }
-    setLoading(false);
+
+    // If token exists but user not, try to fetch user using token
+    if (token) {
+      const fetchUserByToken = async () => {
+        try {
+          const response = await fetch(buildApiUrl("/company-users/me"), {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          if (response.ok) {
+            const data = await response.json();
+            const userData = data.data?.user || data.user || data.data || data;
+            if (userData && typeof userData === "object") {
+              setUser(userData);
+              setIsAuthenticated(true);
+              localStorage.setItem("user", JSON.stringify(userData));
+            } else {
+              throw new Error("Invalid user data");
+            }
+          } else {
+            // Token invalid/expired, remove it
+            localStorage.removeItem("token");
+          }
+        } catch (error) {
+          console.error("Failed to fetch user with token:", error);
+          localStorage.removeItem("token");
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchUserByToken();
+    } else {
+      setLoading(false);
+    }
   }, []);
 
-  // ---------- LOGIN (token‑optional) ----------
+  // ---------- LOGIN (email & password) ----------
   const login = async (email, password) => {
     try {
       const response = await fetch(buildApiUrl("/company-users/login"), {
@@ -236,28 +295,27 @@ export function AuthProvider({ children }) {
         throw new Error(errorMsg);
       }
 
-      // Extract user from response (try multiple locations)
+      // Extract user from response
       let userData = null;
       if (data.data && data.data.user) {
         userData = data.data.user;
       } else if (data.user) {
         userData = data.user;
       } else if (data.data) {
-        userData = data.data; // fallback: maybe the whole data is the user
+        userData = data.data;
       }
 
       if (!userData) {
         throw new Error("User data missing from server response");
       }
 
-      // ----- Optional: try to grab a token (if any) -----
+      // Try to grab token
       let authToken = null;
-      // Check body
       if (data.data && data.data.token) authToken = data.data.token;
       else if (data.data && data.data.accessToken) authToken = data.data.accessToken;
       else if (data.token) authToken = data.token;
       else if (data.accessToken) authToken = data.accessToken;
-      // Check headers
+
       if (!authToken) {
         const headerToken = response.headers.get("Authorization");
         if (headerToken && headerToken.startsWith("Bearer ")) {
@@ -267,16 +325,13 @@ export function AuthProvider({ children }) {
         }
       }
 
-      // If token exists, store it (optional)
       if (authToken) {
         localStorage.setItem("token", authToken);
       } else {
-        console.warn("No token returned from login API – relying on session cookies.");
-        // Remove any stale token to avoid confusion
+        console.warn("No token returned – relying on cookies.");
         localStorage.removeItem("token");
       }
 
-      // Save user and mark authenticated
       setUser(userData);
       setIsAuthenticated(true);
       localStorage.setItem("user", JSON.stringify(userData));
@@ -290,7 +345,65 @@ export function AuthProvider({ children }) {
     }
   };
 
-  // ---------- REGISTER (unchanged) ----------
+  // ---------- TOKEN-BASED LOGIN (new) ----------
+  const loginWithToken = async (token) => {
+    try {
+      // Save token immediately
+      localStorage.setItem("token", token);
+
+      // Option 1: Fetch user from API
+      const response = await fetch(buildApiUrl("/company-users/me"), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const userData = data.data?.user || data.user || data.data || data;
+        if (!userData || typeof userData !== "object") {
+          throw new Error("Invalid user data from API");
+        }
+        setUser(userData);
+        setIsAuthenticated(true);
+        localStorage.setItem("user", JSON.stringify(userData));
+        showSuccess("Logged in successfully via token.");
+        return { success: true };
+      } else {
+        // If API fails, fallback to decoding JWT (if it's a JWT)
+        try {
+          // You can install jwt-decode: npm install jwt-decode
+          const jwt_decode = require("jwt-decode");
+          const decoded = jwt_decode(token);
+          // Map the decoded fields to your user object
+          const userData = {
+            id: decoded.id,
+            email: decoded.email,
+            company_id: decoded.company_id,
+            type: decoded.type,
+            provider: decoded.provider,
+            // add any other fields you need
+          };
+          setUser(userData);
+          setIsAuthenticated(true);
+          localStorage.setItem("user", JSON.stringify(userData));
+          showSuccess("Logged in via token (decoded).");
+          return { success: true };
+        } catch (decodeError) {
+          console.error("Token decode failed:", decodeError);
+          throw new Error("Invalid token or API unavailable");
+        }
+      }
+    } catch (error) {
+      console.error("Token login error:", error);
+      showError(error.message || "Token authentication failed");
+      localStorage.removeItem("token");
+      return { success: false, error: error.message };
+    }
+  };
+
+  // ---------- REGISTER ----------
   const register = async (email, password, mobile) => {
     try {
       const payload = { email, password, mobile, login_type: "email" };
@@ -334,7 +447,7 @@ export function AuthProvider({ children }) {
     showSuccess("Profile updated successfully!");
   };
 
-  // ---------- FORGOT PASSWORD (placeholder) ----------
+  // ---------- FORGOT PASSWORD ----------
   const forgotPassword = async (email) => {
     try {
       if (email) {
@@ -355,11 +468,11 @@ export function AuthProvider({ children }) {
     isAuthenticated,
     loading,
     login,
+    loginWithToken,   // <--- new
     register,
     logout,
     updateUser,
     forgotPassword,
-    // If you still need the token for some reason, you can retrieve it from localStorage:
     token: localStorage.getItem("token") || null,
   };
 
